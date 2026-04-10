@@ -8,6 +8,7 @@ import { openai } from "./openai.js";
 import { pool } from "./db.js";
 import { extractGraphDataFromCv, storeGraphData, getGraphByDocumentId, buildGraphContext } from "./graphService.js";
 import { advancedHybridGraphSearch } from "./hybridGraphSearchService.js";
+import { queryGraphRag, indexDocumentToGraphRag } from "./graphRagClient.js";
 
 dotenv.config();
 
@@ -292,6 +293,96 @@ app.post("/api/candidates/search-advanced", async (req, res) => {
         });
     } catch (error) {
         console.error("advanced search error:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post("/api/cv/ask-full", async (req, res) => {
+    try {
+        const { question } = req.body;
+
+        if (!question) {
+            return res.status(400).json({ error: "question is required" });
+        }
+
+        // Vector retrieval
+        const vectorChunks = await searchRelevantChunks(question, 5);
+        const vectorContext = vectorChunks
+            .map((c, i) => `[Chunk ${i + 1}] ${c.file_name}\n${c.content}`)
+            .join("\n\n");
+
+        // GraphRAG retrieval
+        const graphRagResponse = await queryGraphRag(question);
+        const graphRagContext = graphRagResponse.output || "";
+
+        // Final answer generation
+        const response = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [
+                {
+                    role: "system",
+                    content:
+                        "Answer based only on the context provided. If there isn't enough information, say there isn't enough information.",
+                },
+                {
+                    role: "user",
+                    content: `
+Use the following two contexts to answer the user's question.
+
+Vector Context:
+${vectorContext}
+
+GraphRAG Context:
+${graphRagContext}
+
+Question:
+${question}
+`,
+                },
+            ],
+        });
+
+        res.json({
+            answer: response.choices[0].message.content,
+            vectorChunks,
+            graphRagContext,
+        });
+    } catch (error) {
+        console.error("ask-full error:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post("/api/cv/:documentId/index-graphrag", async (req, res) => {
+    try {
+        const { documentId } = req.params;
+
+        const result = await pool.query(
+            `SELECT id, file_name, raw_text
+       FROM cv_documents
+       WHERE id = $1`,
+            [documentId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: "Document not found" });
+        }
+
+        const document = result.rows[0];
+
+        const graphRagResult = await indexDocumentToGraphRag({
+            documentId: document.id,
+            fileName: document.file_name,
+            rawText: document.raw_text,
+        });
+
+        res.json({
+            success: true,
+            message: "Document sent to GraphRAG for indexing",
+            graphRagResult,
+        });
+    } catch (error) {
+        console.error("index-graphrag error:", error);
         res.status(500).json({ error: error.message });
     }
 });
