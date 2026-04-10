@@ -1,0 +1,23 @@
+{
+  "name": "day1-rag",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "nodemon src/app.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "dotenv": "^17.4.1",
+    "express": "^5.2.1",
+    "multer": "^2.1.1",
+    "nodemon": "^3.1.14",
+    "openai": "^6.33.0",
+    "pdf-parse": "^2.4.5",
+    "pg": "^8.20.0"
+  }
+}
